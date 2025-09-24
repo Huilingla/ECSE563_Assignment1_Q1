@@ -1,0 +1,48 @@
+% solve_admittance
+clear all; close all; clc;
+
+% Load data
+ieee9_A1;
+
+fprintf('=== IEEE 9-BUS SYSTEM NODAL ANALYSIS ===\n\n');
+
+% Step 1-3: Calculate admittance matrix
+Y_full = admittance(nfrom, nto, r, x, b);
+
+% Step 4: Print admittance matrix
+fprintf('ADMITTANCE MATRIX (p.u.):\n');
+fprintf('Real part (G):\n');
+disp(real(Y_full));
+fprintf('Imaginary part (B):\n');
+disp(imag(Y_full));
+
+% Step 5: Solve for voltages
+N_total = 9;
+ref_node = 9;
+non_ref_nodes = setdiff(1:N_total, ref_node);
+
+Y_reduced = Y_full(non_ref_nodes, non_ref_nodes);
+I_non_ref = Iint(non_ref_nodes);
+
+% Solve using linsolve()
+V_non_ref = linsolve(Y_reduced, I_non_ref);
+
+% Complete voltage vector
+V_complete = zeros(N_total, 1);
+V_complete(ref_node) = 0;
+V_complete(non_ref_nodes) = V_non_ref;
+
+% Convert to polar
+V_mag = abs(V_complete);
+V_angle_deg = angle(V_complete) * 180/pi;
+
+fprintf('\nNODE VOLTAGES (POLAR COORDINATES):\n');
+fprintf('Node    Magnitude    Angle(deg)\n');
+fprintf('----    ---------    ----------\n');
+for i = 1:N_total
+    fprintf('%2d      %8.4f      %8.2f\n', i, V_mag(i), V_angle_deg(i));
+end
+
+% Validation
+I_calc = Y_reduced * V_non_ref;
+fprintf('\nValidation - Max current mismatch: %e p.u.\n', max(abs(I_calc - I_non_ref)));
