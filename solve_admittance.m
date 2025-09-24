@@ -1,4 +1,4 @@
-% solve_admittance Solve the IEEE 9-bus system following exact nodal analysis steps
+% SOLVE_IEEE9 Solve the IEEE 9-bus system using the full admittance matrix
 clear all; close all; clc;
 
 % Load the IEEE 9-bus system data
@@ -16,38 +16,23 @@ fprintf('\nSTEP 4: ADMITTANCE MATRIX OUTPUT\n');
 fprintf('--------------------------------\n');
 fprintf('Full Admittance Matrix Y (%dx%d) in p.u.:\n\n', size(Y_full,1), size(Y_full,2));
 
-% Display real and imaginary parts together in the same matrix
-fprintf('Complex Admittance Matrix (G + jB):\n');
-fprintf('Format: Real + jImaginary\n');
-fprintf('Bus');
-for j = 1:size(Y_full,2)
-    fprintf('%12d', j);
-end
-fprintf('\n');
-fprintf('----');
-for j = 1:size(Y_full,2)
-    fprintf('%12s', '----------');
-end
-fprintf('\n');
-
+% Display as combined complex matrix
+fprintf('Combined Admittance Matrix (G + jB):\n');
 for i = 1:size(Y_full,1)
-    fprintf('%2d: ', i);
+    fprintf('Bus %d: ', i);
     for j = 1:size(Y_full,2)
-        real_part = real(Y_full(i,j));
-        imag_part = imag(Y_full(i,j));
-        
-        if imag_part >= 0
-            fprintf('%7.4f+j%-7.4f', real_part, imag_part);
+        if imag(Y_full(i,j)) >= 0
+            fprintf('%8.4f + j%7.4f  ', real(Y_full(i,j)), imag(Y_full(i,j)));
         else
-            fprintf('%7.4f-j%-7.4f', real_part, abs(imag_part));
+            fprintf('%8.4f - j%7.4f  ', real(Y_full(i,j)), abs(imag(Y_full(i,j))));
         end
     end
     fprintf('\n');
 end
 
-% Step 5: Solve for node voltages using internal current sources
-fprintf('\nSTEP 5: SOLVING FOR NODE VOLTAGES\n');
-fprintf('---------------------------------\n');
+% Step 5: Solve for node voltages using the FULL matrix with reference node constraint
+fprintf('\nSTEP 5: SOLVING FOR NODE VOLTAGES USING FULL MATRIX\n');
+fprintf('---------------------------------------------------\n');
 
 % Determine system dimensions
 N_total = max(unique([nfrom; nto]));
@@ -56,27 +41,22 @@ N_total = max(unique([nfrom; nto]));
 ref_node = 9;
 fprintf('Using node %d as reference (V_%d = 0)\n', ref_node, ref_node);
 
-% Remove reference node to make system solvable
-non_ref_nodes = setdiff(1:N_total, ref_node);
-Y_reduced = Y_full(non_ref_nodes, non_ref_nodes);
+% Modify the full matrix to enforce reference node constraint
+Y_modified = Y_full;
 
-% Extract current injections for non-reference nodes
-I_non_ref = Iint(non_ref_nodes);
+% Method 1: Set reference node row/column to identity and injection to zero
+Y_modified(ref_node, :) = 0;
+Y_modified(:, ref_node) = 0;
+Y_modified(ref_node, ref_node) = 1;
 
-fprintf('\nCurrent injections at non-reference nodes:\n');
-for i = 1:length(non_ref_nodes)
-    node = non_ref_nodes(i);
-    fprintf('  I_%d = %7.4f + j%7.4f p.u.\n', node, real(I_non_ref(i)), imag(I_non_ref(i)));
-end
+I_modified = Iint;
+I_modified(ref_node) = 0;  % Set reference node current to zero
 
-% Solve Y_reduced * V_non_ref = I_non_ref using linsolve()
-fprintf('\nSolving system: Y_reduced * V_non_ref = I_non_ref\n');
-V_non_ref = linsolve(Y_reduced, I_non_ref);
+fprintf('\nModified system: Y_modified * V = I_modified\n');
+fprintf('(Reference node constraint enforced by modifying row/column %d)\n', ref_node);
 
-% Create complete voltage vector with reference node voltage = 0
-V_complete = zeros(N_total, 1);
-V_complete(ref_node) = 0; % Reference node voltage = 0
-V_complete(non_ref_nodes) = V_non_ref;
+% Solve using the modified full matrix
+V_complete = linsolve(Y_modified, I_modified);
 
 % Convert to polar coordinates
 V_mag = abs(V_complete);
@@ -86,56 +66,44 @@ V_angle_deg = V_angle_rad * 180/pi;
 % Display results in polar coordinates
 fprintf('\nSOLUTION: NODE VOLTAGES IN POLAR COORDINATES\n');
 fprintf('===========================================\n');
-fprintf('Node    Magnitude (p.u.)    Angle (degrees)\n');
-fprintf('----    ----------------    --------------\n');
+fprintf('Node    Magnitude (p.u.)    Angle (degrees)    Angle (radians)\n');
+fprintf('----    ----------------    --------------    --------------\n');
 
 for i = 1:N_total
     if i == ref_node
-        fprintf('%2d (ref) %12.4f        %12.2f\n', i, V_mag(i), V_angle_deg(i));
+        fprintf('%2d (ref) %12.4f        %12.2f        %12.4f\n', ...
+                i, V_mag(i), V_angle_deg(i), V_angle_rad(i));
     else
-        fprintf('%2d       %12.4f        %12.2f\n', i, V_mag(i), V_angle_deg(i));
+        fprintf('%2d       %12.4f        %12.2f        %12.4f\n', ...
+                i, V_mag(i), V_angle_deg(i), V_angle_rad(i));
     end
 end
 
-% Validation
-fprintf('\nVALIDATION:\n');
-fprintf('-----------\n');
-I_calculated = Y_reduced * V_non_ref;
-mismatch = I_calculated - I_non_ref;
-max_mismatch = max(abs(mismatch));
+% Validation using the FULL matrix
+fprintf('\nVALIDATION USING FULL MATRIX:\n');
+fprintf('-----------------------------\n');
+I_calculated_full = Y_full * V_complete;
+mismatch_full = I_calculated_full - Iint;
+max_mismatch_full = max(abs(mismatch_full));
 
-fprintf('Maximum current injection mismatch: %e p.u.\n', max_mismatch);
+fprintf('Maximum current injection mismatch: %e p.u.\n', max_mismatch_full);
 
-if max_mismatch < 1e-10
+if max_mismatch_full < 1e-10
     fprintf('Solution accuracy: Excellent\n');
 else
     fprintf('Solution accuracy: Acceptable\n');
 end
 
-% Display the reduced matrix used for solving
-fprintf('\nReduced Admittance Matrix (without node %d):\n', ref_node);
-fprintf('Complex Admittance Matrix (G + jB):\n');
-fprintf('Bus');
-for j = 1:size(Y_reduced,2)
-    fprintf('%12d', non_ref_nodes(j));
-end
-fprintf('\n');
-fprintf('----');
-for j = 1:size(Y_reduced,2)
-    fprintf('%12s', '----------');
-end
-fprintf('\n');
-
-for i = 1:size(Y_reduced,1)
-    fprintf('%2d: ', non_ref_nodes(i));
-    for j = 1:size(Y_reduced,2)
-        real_part = real(Y_reduced(i,j));
-        imag_part = imag(Y_reduced(i,j));
-        
-        if imag_part >= 0
-            fprintf('%7.4f+j%-7.4f', real_part, imag_part);
+% Display the modified full matrix used for solving
+fprintf('\nModified Full Admittance Matrix (with reference node constraint):\n');
+fprintf('Combined Complex Form:\n');
+for i = 1:size(Y_modified,1)
+    fprintf('Bus %d: ', i);
+    for j = 1:size(Y_modified,2)
+        if imag(Y_modified(i,j)) >= 0
+            fprintf('%8.4f + j%7.4f  ', real(Y_modified(i,j)), imag(Y_modified(i,j)));
         else
-            fprintf('%7.4f-j%-7.4f', real_part, abs(imag_part));
+            fprintf('%8.4f - j%7.4f  ', real(Y_modified(i,j)), abs(imag(Y_modified(i,j))));
         end
     end
     fprintf('\n');
