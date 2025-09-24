@@ -1,55 +1,107 @@
-% SOLVE_IEEE9 Solve the IEEE 9-bus system using nodal analysis
-%
-% This script:
-%   1. Loads the IEEE 9-bus test system data
-%   2. Computes the admittance matrix using the admittance function
-%   3. Solves for node voltages using the internal current sources
-%   4. Displays results in polar coordinates
+% run_validation Solve the IEEE 9-bus system following exact nodal analysis steps
+clear all; close all; clc;
 
 % Load the IEEE 9-bus system data
 ieee9_A1;
 
-% Calculate admittance matrix
-Y = admittance(nfrom, nto, r, x, b);
+fprintf('=== NODAL ANALYSIS OF IEEE 9-BUS SYSTEM ===\n\n');
+
+% Step 1: Calculate admittance matrix using the prescribed methodology
+fprintf('STEP 1: CALCULATING ADMITTANCE MATRIX\n');
+fprintf('--------------------------------------\n');
+Y_full = admittance(nfrom, nto, r, x, b);
+
+% Step 4: Print the admittance matrix
+fprintf('\nSTEP 4: ADMITTANCE MATRIX OUTPUT\n');
+fprintf('--------------------------------\n');
+fprintf('Full Admittance Matrix Y (%dx%d) in p.u.:\n\n', size(Y_full,1), size(Y_full,2));
+
+% Display real and imaginary parts separately for clarity
+fprintf('Real Part (Conductance Matrix G):\n');
+for i = 1:size(Y_full,1)
+    fprintf('Bus %d: ', i);
+    for j = 1:size(Y_full,2)
+        fprintf('%8.4f ', real(Y_full(i,j)));
+    end
+    fprintf('\n');
+end
+
+fprintf('\nImaginary Part (Susceptance Matrix B):\n');
+for i = 1:size(Y_full,1)
+    fprintf('Bus %d: ', i);
+    for j = 1:size(Y_full,2)
+        fprintf('%8.4f ', imag(Y_full(i,j)));
+    end
+    fprintf('\n');
+end
+
+% Step 5: Solve for node voltages using internal current sources
+fprintf('\nSTEP 5: SOLVING FOR NODE VOLTAGES\n');
+fprintf('---------------------------------\n');
 
 % Determine system dimensions
-all_nodes = unique([nfrom; nto]);
-N_total = max(all_nodes);
-N = N_total - 1; % After removing reference node
+N_total = max(unique([nfrom; nto]));
+
+% Choose reference node (node 9 as shown in your results)
+ref_node = 9;
+fprintf('Using node %d as reference (V_%d = 0)\n', ref_node, ref_node);
+
+% Remove reference node to make system solvable
+non_ref_nodes = setdiff(1:N_total, ref_node);
+Y_reduced = Y_full(non_ref_nodes, non_ref_nodes);
 
 % Extract current injections for non-reference nodes
-% The reference node is node N_total (highest numbered node)
-ref_node = N_total;
-non_ref_nodes = setdiff(1:N_total, ref_node);
-
-% Internal current sources (given in the data file)
-% We need to extract only the non-reference nodes
 I_non_ref = Iint(non_ref_nodes);
 
-% Solve for node voltages: Y * V = I
-% Use linsolve() instead of matrix inversion
-V_non_ref = linsolve(Y, I_non_ref);
+fprintf('\nCurrent injections at non-reference nodes:\n');
+for i = 1:length(non_ref_nodes)
+    node = non_ref_nodes(i);
+    fprintf('  I_%d = %7.4f + j%7.4f p.u.\n', node, real(I_non_ref(i)), imag(I_non_ref(i)));
+end
+
+% Solve Y_reduced * V_non_ref = I_non_ref using linsolve()
+fprintf('\nSolving system: Y_reduced * V_non_ref = I_non_ref\n');
+V_non_ref = linsolve(Y_reduced, I_non_ref);
 
 % Create complete voltage vector with reference node voltage = 0
 V_complete = zeros(N_total, 1);
+V_complete(ref_node) = 0; % Reference node voltage = 0
 V_complete(non_ref_nodes) = V_non_ref;
-V_complete(ref_node) = 0; % Reference node voltage
 
 % Convert to polar coordinates
 V_mag = abs(V_complete);
-V_angle_deg = angle(V_complete) * 180/pi;
+V_angle_rad = angle(V_complete);
+V_angle_deg = V_angle_rad * 180/pi;
 
-% Display results
-fprintf('IEEE 9-Bus System Node Voltages\n');
-fprintf('================================\n\n');
-fprintf('Node\tMagnitude (p.u.)\tAngle (degrees)\n');
-fprintf('----\t---------------\t-------------\n');
+% Display results in polar coordinates
+fprintf('\nSOLUTION: NODE VOLTAGES IN POLAR COORDINATES\n');
+fprintf('===========================================\n');
+fprintf('Node    Magnitude (p.u.)    Angle (degrees)    Angle (radians)\n');
+fprintf('----    ----------------    --------------    --------------\n');
 
 for i = 1:N_total
-    fprintf('%2d\t%12.4f\t%12.2f\n', i, V_mag(i), V_angle_deg(i));
+    if i == ref_node
+        fprintf('%2d (ref) %12.4f        %12.2f        %12.4f\n', ...
+                i, V_mag(i), V_angle_deg(i), V_angle_rad(i));
+    else
+        fprintf('%2d       %12.4f        %12.2f        %12.4f\n', ...
+                i, V_mag(i), V_angle_deg(i), V_angle_rad(i));
+    end
 end
 
-% Additional validation: Calculate power mismatch
-I_calculated = Y * V_non_ref;
-mismatch = norm(I_calculated - I_non_ref);
-fprintf('\nCurrent injection mismatch norm: %e\n', mismatch);
+% Validation
+fprintf('\nVALIDATION:\n');
+fprintf('-----------\n');
+I_calculated = Y_reduced * V_non_ref;
+mismatch = I_calculated - I_non_ref;
+max_mismatch = max(abs(mismatch));
+
+fprintf('Maximum current injection mismatch: %e p.u.\n', max_mismatch);
+fprintf('Solution accuracy: %s\n', max_mismatch < 1e-10 ? 'Excellent' : 'Acceptable');
+
+% Display the reduced matrix used for solving
+fprintf('\nReduced Admittance Matrix (without node %d):\n', ref_node);
+fprintf('Real Part:\n');
+disp(real(Y_reduced));
+fprintf('Imaginary Part:\n');
+disp(imag(Y_reduced));
