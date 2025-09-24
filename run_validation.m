@@ -1,4 +1,4 @@
-% run_validation Solve the IEEE 9-bus system following exact nodal analysis steps
+% SOLVE_IEEE9 Solve the IEEE 9-bus system following exact nodal analysis steps
 clear all; close all; clc;
 
 % Load the IEEE 9-bus system data
@@ -97,7 +97,12 @@ mismatch = I_calculated - I_non_ref;
 max_mismatch = max(abs(mismatch));
 
 fprintf('Maximum current injection mismatch: %e p.u.\n', max_mismatch);
-fprintf('Solution accuracy: %s\n', max_mismatch < 1e-10 ? 'Excellent' : 'Acceptable');
+
+if max_mismatch < 1e-10
+    fprintf('Solution accuracy: Excellent\n');
+else
+    fprintf('Solution accuracy: Acceptable\n');
+end
 
 % Display the reduced matrix used for solving
 fprintf('\nReduced Admittance Matrix (without node %d):\n', ref_node);
