@@ -1,4 +1,3 @@
-% SOLVE_IEEE9 Solve the IEEE 9-bus system following exact nodal analysis steps
 clear all; close all; clc;
 
 % Load the IEEE 9-bus system data
